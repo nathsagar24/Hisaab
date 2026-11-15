@@ -85,6 +85,12 @@ function render(){
   $('#app').innerHTML=view?detail():tab=='month'?month():tab=='income'?income():tab=='invest'?invest():tab=='spend'?spend():debtTab();
 }
 
+function emiInfo(d){const e=d.emi;if(!e)return null;const done=d.pay.filter(r=>r.emi).length,fin=e.n>0&&done>=e.n;let next='';
+  if(!fin){const b=new Date((e.start||d.date)+'T00:00'),dt=new Date(b.getFullYear(),b.getMonth()+done,1),dd=Math.min(b.getDate(),new Date(dt.getFullYear(),dt.getMonth()+1,0).getDate());dt.setDate(dd);next=dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0')}
+  return{e,done,fin,next,over:!!next&&next<today()}}
+function emiLine(d){const i=emiInfo(d);if(!i)return '';return 'EMI '+money(i.e.amt)+(i.e.n?' \u00b7 '+i.done+' of '+i.e.n+' paid':' \u00b7 '+i.done+' paid')+(i.fin?' \u00b7 all paid':' \u00b7 next due '+fdate(i.next))}
+function markEmi(k,id){const d=S[k].find(x=>x.id==id),i=emiInfo(d);modal('Mark EMI paid'+(i.e.n?' ('+(i.done+1)+' of '+i.e.n+')':''),[{k:'amt',l:'Amount paid',t:'number',v:i.e.amt},{k:'date',l:'Paid on',t:'date',v:today()},{k:'note',l:'Note (optional)'}],(v,sh)=>{if(!(+v.amt>0))return false;d.pay.push({id:uid(),amt:+v.amt,date:v.date||today(),note:v.note,shots:sh,emi:true})})}
+function setEmi(k,id){const d=S[k].find(x=>x.id==id),e=d.emi||{};modal(d.emi?'Edit EMI':'Set up EMI',[{k:'amt',l:'EMI amount (set 0 to remove EMI)',t:'number',v:e.amt||''},{k:'n',l:'Number of EMIs (optional)',t:'number',v:e.n||''},{k:'start',l:'First EMI date',t:'date',v:e.start||d.date}],v=>{d.emi=+v.amt>0?{amt:+v.amt,n:+v.n||0,start:v.start||d.date}:null})}
 function debtTab(){
   const left=d=>Math.max(0,d.amt-paid(d)),tg=S.given.reduce((a,d)=>a+left(d),0),tr=S.received.reduce((a,d)=>a+left(d),0),net=tg-tr;
   let h=`<div class="card sum"><div><b class="pos">${money(tg)}</b><span>Owed to me</span></div><div><b class="neg">${money(tr)}</b><span>I owe</span></div><div><b class="${net>=0?'pos':'neg'}">${money(Math.abs(net))}</b><span>${net>=0?'Net owed to me':'Net I owe'}</span></div></div>`;
@@ -95,19 +101,21 @@ function list(k){
   let h=`<div class="card sum"><div><b>${money(tot)}</b><span>${KIND[k][1]}</span></div><div><b>${money(pd)}</b><span>${KIND[k][2]}</span></div><div><b class="${k=='given'?'pos':'neg'}">${money(tot-pd)}</b><span>${KIND[k][3]}</span></div></div>`;
   if(!L.length)return h+`<div class="empty">No entries yet.<br>Tap the button below to add one.</div>`;
   return h+L.map(d=>{const p=paid(d),pc=Math.min(100,p/d.amt*100),left=d.amt-p;
-    return `<div class="card item" onclick="view={k:'${k}',id:'${d.id}'};render()"><div class="r"><b>${esc(d.person)}</b><b class="${left<=0?'pos':''}">${left<=0?'Settled':money(left)+' left'}</b></div><div class="bar"><i style="width:${pc}%"></i></div><div class="r mut"><span>${money(p)} of ${money(d.amt)}</span><span>${fdate(d.date)}</span></div>${thumbs(d.shots)}</div>`}).join('');
+    return `<div class="card item" onclick="view={k:'${k}',id:'${d.id}'};render()"><div class="r"><b>${esc(d.person)}</b><b class="${left<=0?'pos':''}">${left<=0?'Settled':money(left)+' left'}</b></div><div class="bar"><i style="width:${pc}%"></i></div><div class="r mut"><span>${money(p)} of ${money(d.amt)}</span><span>${fdate(d.date)}</span></div>${d.emi?`<div class="mut" style="margin-top:4px;${emiInfo(d).over?'color:var(--red)':''}">${emiLine(d)}${emiInfo(d).over?' (overdue)':''}</div>`:''}${thumbs(d.shots)}</div>`}).join('');
 }
 
 function detail(){
   const k=view.k,d=S[k].find(x=>x.id==view.id);if(!d){view=null;return debtTab()}
-  const p=paid(d),left=d.amt-p;
+  const p=paid(d),left=d.amt-p,ei=emiInfo(d);
   return `<div class="top"><button class="g" onclick="view=null;render()">← Back</button></div>
   <div class="card"><div class="mut">${KIND[k][0]} · ${fdate(d.date)}</div><h2 style="margin:4px 0">${esc(d.person)}</h2>${d.note?`<div class="mut">${esc(d.note)}</div>`:''}
   <div class="bar"><i style="width:${Math.min(100,p/d.amt*100)}%"></i></div>
   <div class="sum" style="margin-top:10px"><div><b>${money(d.amt)}</b><span>Total</span></div><div><b>${money(p)}</b><span>Repaid</span></div><div><b class="${left<=0?'pos':'neg'}">${money(Math.max(left,0))}</b><span>Left</span></div></div>
   ${thumbs(d.shots)}
-  <div class="row"><button class="b" onclick="addPay('${k}','${d.id}')">+ Repayment</button></div></div>
-  <div class="card"><b>Repayments</b>${d.pay.length?d.pay.map(r=>`<div class="pay"><div><b>${money(r.amt)}</b> <span class="mut">${fdate(r.date)}${r.note?' · '+esc(r.note):''}</span>${thumbs(r.shots)}</div><button class="x" onclick="delPay('${k}','${d.id}','${r.id}')" aria-label="Delete">✕</button></div>`).join(''):'<div class="mut" style="margin-top:6px">None recorded yet.</div>'}</div>
+  ${ei?`<div style="margin-top:10px;${ei.over?'color:var(--red)':''}"><b>${emiLine(d)}</b>${ei.over?' (overdue)':''}</div>`:''}
+  <div class="row"><button class="b" onclick="addPay('${k}','${d.id}')">+ Repayment</button>${ei&&!ei.fin?`<button class="b" onclick="markEmi('${k}','${d.id}')">\u2713 EMI paid</button>`:''}</div>
+  <div class="row"><button class="g" onclick="setEmi('${k}','${d.id}')">${ei?'Edit EMI':'Set up EMI'}</button></div></div>
+  <div class="card"><b>Repayments</b>${d.pay.length?d.pay.map(r=>`<div class="pay"><div><b>${money(r.amt)}</b> <span class="mut">${fdate(r.date)}${r.emi?' · EMI':''}${r.note?' · '+esc(r.note):''}</span>${thumbs(r.shots)}</div><button class="x" onclick="delPay('${k}','${d.id}','${r.id}')" aria-label="Delete">✕</button></div>`).join(''):'<div class="mut" style="margin-top:6px">None recorded yet.</div>'}</div>
   <button class="d" style="width:100%" onclick="twice(this,()=>{S['${k}']=S['${k}'].filter(x=>x.id!='${d.id}');save();view=null;render()})">Delete this entry</button>`;
 }
 
@@ -143,7 +151,7 @@ function addImgs(inp){
   [...inp.files].forEach(f=>{const r=new FileReader();r.onload=()=>{const im=new Image();im.onload=()=>{const sc=Math.min(1,1100/Math.max(im.width,im.height)),c=document.createElement('canvas');c.width=im.width*sc;c.height=im.height*sc;c.getContext('2d').drawImage(im,0,0,c.width,c.height);const u=c.toDataURL('image/jpeg',.72);tmp.push(u);$('#prev').innerHTML+=`<img src="${u}" alt="">`};im.src=r.result};r.readAsDataURL(f)});
   inp.value='';
 }
-function addDebt(k){modal(k=='given'?'Lend money':'Borrow money',[{k:'person',l:k=='given'?'Lent to':'Borrowed from'},{k:'amt',l:'Amount',t:'number'},{k:'date',l:'Date',t:'date',v:today()},{k:'note',l:'Note (optional)'}],(v,sh)=>{if(!v.person||!(+v.amt>0))return false;S[k].unshift({id:uid(),person:v.person,amt:+v.amt,date:v.date||today(),note:v.note,shots:sh,pay:[]})})}
+function addDebt(k){modal(k=='given'?'Lend money':'Borrow money',[{k:'person',l:k=='given'?'Lent to':'Borrowed from'},{k:'amt',l:'Amount',t:'number'},{k:'date',l:'Date',t:'date',v:today()},{k:'note',l:'Note (optional)'},{k:'emi',l:'EMI amount (optional)',t:'number'},{k:'emin',l:'Number of EMIs (optional)',t:'number'},{k:'estart',l:'First EMI date (optional)',t:'date'}],(v,sh)=>{if(!v.person||!(+v.amt>0))return false;S[k].unshift({id:uid(),person:v.person,amt:+v.amt,date:v.date||today(),note:v.note,shots:sh,pay:[],emi:+v.emi>0?{amt:+v.emi,n:+v.emin||0,start:v.estart||v.date||today()}:null})})}
 function addPay(k,id){const d=S[k].find(x=>x.id==id);modal('Add repayment',[{k:'amt',l:'Amount',t:'number',v:Math.max(d.amt-paid(d),0)||''},{k:'date',l:'Date',t:'date',v:today()},{k:'note',l:'Note (optional)'}],(v,sh)=>{if(!(+v.amt>0))return false;d.pay.push({id:uid(),amt:+v.amt,date:v.date||today(),note:v.note,shots:sh})})}
 function delPay(k,id,pid){const d=S[k].find(x=>x.id==id);d.pay=d.pay.filter(r=>r.id!=pid);save();render()}
 function addSlip(){modal('Add payslip',[{k:'month',l:'Pay month',t:'month',v:today().slice(0,7)},{k:'net',l:'Net / take-home pay',t:'number'},{k:'gross',l:'Gross pay (optional)',t:'number'},{k:'note',l:'Note (optional)'}],(v,sh)=>{if(!v.month||!(+v.net>0))return false;S.pay=S.pay.filter(x=>x.month!=v.month);S.pay.push({id:uid(),month:v.month,net:+v.net,gross:+v.gross||0,note:v.note,shots:sh})})}
