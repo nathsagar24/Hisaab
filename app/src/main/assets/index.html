@@ -520,11 +520,11 @@ function respond(id,ok){const r=CS.find(x=>x.id==id);if(!r)return;const me=lc(CU
   firebase.firestore().collection('shared').doc(id).update(u).then(()=>note(r.createdBy,myName()+(ok?' accepted':' declined')+' your debt request of '+money(r.amt),id)).catch(cerr)}
 function cancelShared(id){firebase.firestore().collection('shared').doc(id).delete().catch(cerr)}
 function addSharedPay(id){const r=CS.find(x=>x.id==id);if(!r)return;
-  modal('Add repayment – screenshot required',[{k:'amt',l:'Amount',t:'number',v:Math.max(r.amt-sPaid(r),0)||''},{k:'date',l:'Date',t:'date',v:today()},{k:'note',l:'Note (optional)'}],(v,sh)=>{
-    if(!(+v.amt>0)||!sh.length)return false;
+  modal(imLender(r)?'Add repayment':'Add repayment – screenshot required',[{k:'amt',l:'Amount',t:'number',v:Math.max(r.amt-sPaid(r),0)||''},{k:'date',l:'Date',t:'date',v:today()},{k:'note',l:'Note (optional)'}],(v,sh)=>{
+    if(!(+v.amt>0)||(!imLender(r)&&!sh.length))return false;
     const shots=sh.slice(0,3);if(shots.join('').length>700000){alert('Screenshots are too large. Add fewer or smaller images.');return false}
-    const x={id:uid(),amt:+v.amt,date:v.date||today(),note:v.note||'',by:lc(CU.email),hasProof:true},db=firebase.firestore(),ref=db.collection('shared').doc(id);
-    ref.collection('proofs').doc(x.id).set({shots,by:x.by,ts:Date.now()}).then(()=>ref.update({pay:firebase.firestore.FieldValue.arrayUnion(x)})).then(()=>{SP[id]=null;return note(otherOf(r).e,myName()+' recorded a repayment of '+money(x.amt)+' with a screenshot',id)}).catch(cerr)})}
+    const x={id:uid(),amt:+v.amt,date:v.date||today(),note:v.note||'',by:lc(CU.email),hasProof:shots.length>0},db=firebase.firestore(),ref=db.collection('shared').doc(id);
+    (shots.length?ref.collection('proofs').doc(x.id).set({shots,by:x.by,ts:Date.now()}):Promise.resolve()).then(()=>ref.update({pay:firebase.firestore.FieldValue.arrayUnion(x)})).then(()=>{SP[id]=null;return note(otherOf(r).e,myName()+' recorded a repayment of '+money(x.amt)+(shots.length?' with a screenshot':''),id)}).catch(cerr)})}
 const SP={};
 function loadProofs(id){if(SP[id]!==undefined)return;SP[id]={};firebase.firestore().collection('shared').doc(id).collection('proofs').get().then(q=>{const m={};q.docs.forEach(d=>m[d.id]=d.data().shots||[]);SP[id]=m;if(view&&view.id==id)render()}).catch(()=>{SP[id]=undefined})}
 </script>

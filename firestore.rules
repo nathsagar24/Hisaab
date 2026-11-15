@@ -20,10 +20,13 @@ service cloud.firestore {
         // repayments only on accepted records
         (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['pay'])
           && resource.data.status == 'accepted'
-          // exactly one new repayment, and its screenshot proof must already exist
+          // exactly one new repayment, recorded by the person signed in
           && request.resource.data.pay.size() == resource.data.pay.size() + 1
-          && request.resource.data.pay[request.resource.data.pay.size() - 1].hasProof == true
-          && exists(/databases/$(database)/documents/shared/$(id)/proofs/$(request.resource.data.pay[request.resource.data.pay.size() - 1].id)))
+          && request.resource.data.pay[request.resource.data.pay.size() - 1].by == me()
+          // the borrower must attach a screenshot proof, saved beforehand
+          && (me() != resource.data.borrower
+            || (request.resource.data.pay[request.resource.data.pay.size() - 1].hasProof == true
+              && exists(/databases/$(database)/documents/shared/$(id)/proofs/$(request.resource.data.pay[request.resource.data.pay.size() - 1].id)))))
         // accept/decline only by the person who did not create it
         || (request.resource.data.diff(resource.data).affectedKeys()
               .hasOnly(['status', 'lenderName', 'borrowerName'])
