@@ -61,7 +61,7 @@ const $=s=>document.querySelector(s);
 const uid=()=>Math.random().toString(36).slice(2,9);
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const money=n=>S.cur+Number(n||0).toLocaleString(undefined,{maximumFractionDigits:2});
-const today=()=>new Date().toISOString().slice(0,10);
+const pad2=n=>String(n).padStart(2,'0'),ymd=d=>d.getFullYear()+'-'+pad2(d.getMonth()+1)+'-'+pad2(d.getDate()),today=()=>ymd(new Date());
 const paid=d=>d.pay.reduce((a,p)=>a+p.amt,0);
 const fdate=s=>!s?'No date':new Date(s+(s.length==7?'-01':'')+'T00:00').toLocaleDateString(undefined,s.length==7?{month:'short',year:'numeric'}:{day:'numeric',month:'short',year:'numeric'});
 const KIND={given:['Debt given','Lent to','Repaid to me','Still owed to me'],received:['Debt received','Borrowed from','Repaid by me','Still I owe']};
@@ -69,7 +69,7 @@ const KIND={given:['Debt given','Lent to','Repaid to me','Still owed to me'],rec
 /* storage: IndexedDB, private to this browser */
 function idb(){return new Promise((res,rej)=>{try{const r=indexedDB.open('moneytracker',1);r.onupgradeneeded=()=>r.result.createObjectStore('k');r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)}catch(e){rej(e)}})}
 async function load(){try{const d=await idb();return await new Promise(res=>{const q=d.transaction('k').objectStore('k').get('s');q.onsuccess=()=>res(q.result);q.onerror=()=>res(null)})}catch(e){return null}}
-async function save(){try{const d=await idb();d.transaction('k','readwrite').objectStore('k').put(JSON.parse(JSON.stringify(S)),'s')}catch(e){console.error(e)}}
+async function save(){try{const d=await idb();d.transaction('k','readwrite').objectStore('k').put(JSON.parse(JSON.stringify(S)),'s');syncReminders()}catch(e){console.error(e)}}
 
 function go(t){tab=t;view=null;render()}
 function fabClick(){if(tab=='income')addSlip();else if(tab=='invest')addInv();else if(tab=='spend')addTxn();else addDebt(dsub)}
@@ -91,10 +91,25 @@ function emiInfo(d){const e=d.emi;if(!e)return null;const n=e.n>0?e.n:Math.max(1
 function emiLine(d){const i=emiInfo(d);if(!i)return '';return 'EMI '+money(i.e.amt)+' \u00b7 '+i.done+' of '+i.n+' paid'+(i.fin?' \u00b7 all paid':' \u00b7 next due '+fdate(i.next))}
 function markEmi(k,id){const d=S[k].find(x=>x.id==id),i=emiInfo(d);modal('Mark EMI paid'+' ('+(i.done+1)+' of '+i.n+')',[{k:'amt',l:'Amount paid',t:'number',v:i.e.amt},{k:'date',l:'Paid on',t:'date',v:today()},{k:'note',l:'Note (optional)'}],(v,sh)=>{if(!(+v.amt>0))return false;d.pay.push({id:uid(),amt:+v.amt,date:v.date||today(),note:v.note,shots:sh,emi:true})})}
 function setEmi(k,id){const d=S[k].find(x=>x.id==id),e=d.emi||{};modal(d.emi?'Edit EMI':'Set up EMI',[{k:'amt',l:'EMI amount (set 0 to remove EMI)',t:'number',v:e.amt||''},{k:'n',l:'Number of EMIs (blank = total ÷ EMI)',t:'number',v:e.n||''},{k:'start',l:'First EMI date',t:'date',v:e.start||d.date}],v=>{d.emi=+v.amt>0?{amt:+v.amt,n:+v.n||0,start:v.start||d.date}:null})}
-function editDebt(k,id){const d=S[k].find(x=>x.id==id),e=d.emi||{};modal('Edit debt',[{k:'person',l:k=='given'?'Lent to':'Borrowed from',v:d.person},{k:'amt',l:'Amount',t:'number',v:d.amt},{k:'date',l:'Date (optional)',t:'date',v:d.date||''},{k:'note',l:'Note (optional)',v:d.note||''},{k:'emi',l:'EMI amount (optional, 0 removes EMI)',t:'number',v:e.amt||''},{k:'emin',l:'Number of EMIs (blank = total ÷ EMI)',t:'number',v:e.n||''},{k:'estart',l:'First EMI date (optional)',t:'date',v:e.start||''}],(v,sh)=>{if(!v.person||!(+v.amt>0))return false;d.person=v.person;d.amt=+v.amt;d.date=v.date||'';d.note=v.note;if(sh.length)d.shots=(d.shots||[]).concat(sh);d.emi=+v.emi>0?{amt:+v.emi,n:+v.emin||0,start:v.estart||d.date||today()}:null})}
+function editDebt(k,id){const d=S[k].find(x=>x.id==id),e=d.emi||{};modal('Edit debt',[{k:'person',l:k=='given'?'Lent to':'Borrowed from',v:d.person},{k:'amt',l:'Amount',t:'number',v:d.amt},{k:'date',l:'Date (optional)',t:'date',v:d.date||''},{k:'phone',l:'Phone number for WhatsApp reminders (optional)',t:'tel',v:d.phone||''},{k:'due',l:'Due date (optional)',t:'date',v:d.due||''},{k:'note',l:'Note (optional)',v:d.note||''},{k:'emi',l:'EMI amount (optional, 0 removes EMI)',t:'number',v:e.amt||''},{k:'emin',l:'Number of EMIs (blank = total ÷ EMI)',t:'number',v:e.n||''},{k:'estart',l:'First EMI date (optional)',t:'date',v:e.start||''}],(v,sh)=>{if(!v.person||!(+v.amt>0))return false;d.person=v.person;d.amt=+v.amt;d.date=v.date||'';d.phone=v.phone;d.due=v.due||'';d.note=v.note;if(sh.length)d.shots=(d.shots||[]).concat(sh);d.emi=+v.emi>0?{amt:+v.emi,n:+v.emin||0,start:v.estart||d.date||today()}:null})}
+function dueOf(d){const left=d.amt-paid(d);if(left<=0)return null;const i=emiInfo(d);if(i&&!i.fin)return{date:i.next,amt:Math.min(i.e.amt,left),emi:true};if(d.due)return{date:d.due,amt:left,emi:false};return null}
+function addDays(t,n){const x=new Date(t+'T00:00');x.setDate(x.getDate()+n);return ymd(x)}
+function waNum(p){let n=String(p||'').replace(/\D/g,'');if(n.length==10)n='91'+n;else if(n.length==11&&n[0]=='0')n='91'+n.slice(1);return n}
+function waText(d){const du=dueOf(d),left=d.amt-paid(d);let t='Hi '+d.person+', a friendly reminder: '+money(left)+' is still pending'+(d.date?' (lent on '+fdate(d.date)+')':'')+'.';
+  if(du)t+=' '+(du.emi?'The EMI of ':'The payment of ')+money(du.amt)+(du.date<today()?' was due on ':' is due on ')+fdate(du.date)+'.';
+  return t+' Please let me know when you can pay. Thanks!'}
+function openUrl(u){if(window.HisaabAndroid&&HisaabAndroid.openUrl)HisaabAndroid.openUrl(u);else window.open(u,'_blank')}
+function remind(id){const d=S.given.find(x=>x.id==id);if(!d)return;const n=waNum(d.phone);openUrl('https://wa.me/'+n+'?text='+encodeURIComponent(waText(d)))}
+function attnCard(){const lim=addDays(today(),3),o=[];['given','received'].forEach(k=>S[k].forEach(d=>{const du=dueOf(d);if(du&&du.date<=lim)o.push({k,d,du})}));if(!o.length)return '';o.sort((a,b)=>a.du.date.localeCompare(b.du.date));
+  return `<div class="card"><b>Needs attention</b>${o.map(({k,d,du})=>{const ov=du.date<today();return `<div class="pay"><div onclick="dsub='${k}';view={k:'${k}',id:'${d.id}'};render()" style="cursor:pointer;min-width:0"><div><b>${esc(d.person)}</b> <span class="mut">${k=='given'?'owes you':'you owe'}</span></div><div class="mut" style="${ov?'color:var(--red)':''}">${du.emi?'EMI':'Due'} ${fdate(du.date)} \u00b7 ${money(du.amt)}${ov?' \u00b7 overdue':''}</div></div>${k=='given'?`<button class="g" onclick="remind('${d.id}')" aria-label="Remind on WhatsApp">\ud83d\udcac</button>`:''}</div>`}).join('')}</div>`}
+function syncReminders(){try{if(!window.HisaabAndroid||!HisaabAndroid.setReminders)return;const out=[],now=Date.now();
+  ['given','received'].forEach(k=>S[k].forEach(d=>{const du=dueOf(d);if(!du)return;const when=new Date(du.date+'T09:00:00').getTime(),ttl=(k=='given'?d.person+' owes you ':'You owe '+d.person+' ')+money(du.amt);
+   [[when-864e5,'Due tomorrow'],[when,'Due today']].forEach(([t,lbl],i)=>{if(t>now)out.push({id:d.id+i,t,title:ttl,text:lbl+(du.emi?' \u00b7 EMI':'')})})}));
+  HisaabAndroid.setReminders(JSON.stringify(out))}catch(e){}}
 function debtTab(){
   const left=d=>Math.max(0,d.amt-paid(d)),tg=S.given.reduce((a,d)=>a+left(d),0),tr=S.received.reduce((a,d)=>a+left(d),0),net=tg-tr;
   let h=`<div class="card sum"><div><b class="pos">${money(tg)}</b><span>Owed to me</span></div><div><b class="neg">${money(tr)}</b><span>I owe</span></div><div><b class="${net>=0?'pos':'neg'}">${money(Math.abs(net))}</b><span>${net>=0?'Net owed to me':'Net I owe'}</span></div></div>`;
+  h+=attnCard();
   h+=`<div class="row" style="margin:0 0 12px"><button class="${dsub=='given'?'b':'g'}" onclick="dsub='given';render()">Given</button><button class="${dsub=='received'?'b':'g'}" onclick="dsub='received';render()">Received</button></div>`;
   return h+list(dsub)}
 function list(k){
@@ -102,7 +117,7 @@ function list(k){
   let h=`<div class="card sum"><div><b>${money(tot)}</b><span>${KIND[k][1]}</span></div><div><b>${money(pd)}</b><span>${KIND[k][2]}</span></div><div><b class="${k=='given'?'pos':'neg'}">${money(tot-pd)}</b><span>${KIND[k][3]}</span></div></div>`;
   if(!L.length)return h+`<div class="empty">No entries yet.<br>Tap the button below to add one.</div>`;
   return h+L.map(d=>{const p=paid(d),pc=Math.min(100,p/d.amt*100),left=d.amt-p;
-    return `<div class="card item" onclick="view={k:'${k}',id:'${d.id}'};render()"><div class="r"><b>${esc(d.person)}</b><b class="${left<=0?'pos':''}">${left<=0?'Settled':money(left)+' left'}</b></div><div class="bar"><i style="width:${pc}%"></i></div><div class="r mut"><span>${money(p)} of ${money(d.amt)}</span><span>${fdate(d.date)}</span></div>${d.emi?`<div class="mut" style="margin-top:4px;${emiInfo(d).over?'color:var(--red)':''}">${emiLine(d)}${emiInfo(d).over?' (overdue)':''}</div>`:''}${thumbs(d.shots)}</div>`}).join('');
+    return `<div class="card item" onclick="view={k:'${k}',id:'${d.id}'};render()"><div class="r"><b>${esc(d.person)}</b><b class="${left<=0?'pos':''}">${left<=0?'Settled':money(left)+' left'}</b></div><div class="bar"><i style="width:${pc}%"></i></div><div class="r mut"><span>${money(p)} of ${money(d.amt)}</span><span>${fdate(d.date)}</span></div>${d.emi?`<div class="mut" style="margin-top:4px;${emiInfo(d).over?'color:var(--red)':''}">${emiLine(d)}${emiInfo(d).over?' (overdue)':''}</div>`:(d.due&&d.amt-p>0?`<div class="mut" style="margin-top:4px;${d.due<today()?'color:var(--red)':''}">Due ${fdate(d.due)}${d.due<today()?' (overdue)':''}</div>`:'')}${thumbs(d.shots)}</div>`}).join('');
 }
 
 function detail(){
@@ -114,7 +129,9 @@ function detail(){
   <div class="sum" style="margin-top:10px"><div><b>${money(d.amt)}</b><span>Total</span></div><div><b>${money(p)}</b><span>Repaid</span></div><div><b class="${left<=0?'pos':'neg'}">${money(Math.max(left,0))}</b><span>Left</span></div></div>
   ${thumbs(d.shots)}
   ${ei?`<div style="margin-top:10px;${ei.over?'color:var(--red)':''}"><b>${emiLine(d)}</b>${ei.over?' (overdue)':''}</div>`:''}
+  ${!ei&&d.due&&left>0?`<div style="margin-top:10px;${d.due<today()?'color:var(--red)':''}"><b>Due ${fdate(d.due)}</b>${d.due<today()?' (overdue)':''}</div>`:''}
   <div class="row"><button class="b" onclick="addPay('${k}','${d.id}')">+ Repayment</button>${ei&&!ei.fin?`<button class="b" onclick="markEmi('${k}','${d.id}')">\u2713 EMI paid</button>`:''}</div>
+  ${k=='given'&&left>0?`<div class="row"><button class="${dueOf(d)&&dueOf(d).date<today()?'b':'g'}" onclick="remind('${d.id}')">\ud83d\udcac Remind on WhatsApp</button></div>`:''}
   <div class="row"><button class="g" onclick="editDebt('${k}','${d.id}')">\u270e Edit debt</button><button class="g" onclick="setEmi('${k}','${d.id}')">${ei?'Edit EMI':'Set up EMI'}</button></div></div>
   <div class="card"><b>Repayments</b>${d.pay.length?d.pay.map(r=>`<div class="pay"><div><b>${money(r.amt)}</b> <span class="mut">${fdate(r.date)}${r.emi?' · EMI':''}${r.note?' · '+esc(r.note):''}</span>${thumbs(r.shots)}</div><button class="x" onclick="delPay('${k}','${d.id}','${r.id}')" aria-label="Delete">✕</button></div>`).join(''):'<div class="mut" style="margin-top:6px">None recorded yet.</div>'}</div>
   <button class="d" style="width:100%" onclick="twice(this,()=>{S['${k}']=S['${k}'].filter(x=>x.id!='${d.id}');save();view=null;render()})">Delete this entry</button>`;
@@ -152,7 +169,7 @@ function addImgs(inp){
   [...inp.files].forEach(f=>{const r=new FileReader();r.onload=()=>{const im=new Image();im.onload=()=>{const sc=Math.min(1,1100/Math.max(im.width,im.height)),c=document.createElement('canvas');c.width=im.width*sc;c.height=im.height*sc;c.getContext('2d').drawImage(im,0,0,c.width,c.height);const u=c.toDataURL('image/jpeg',.72);tmp.push(u);$('#prev').innerHTML+=`<img src="${u}" alt="">`};im.src=r.result};r.readAsDataURL(f)});
   inp.value='';
 }
-function addDebt(k){modal(k=='given'?'Lend money':'Borrow money',[{k:'person',l:k=='given'?'Lent to':'Borrowed from'},{k:'amt',l:'Amount',t:'number'},{k:'date',l:'Date (optional)',t:'date'},{k:'note',l:'Note (optional)'},{k:'emi',l:'EMI amount (optional)',t:'number'},{k:'emin',l:'Number of EMIs (blank = total ÷ EMI)',t:'number'},{k:'estart',l:'First EMI date (optional)',t:'date'}],(v,sh)=>{if(!v.person||!(+v.amt>0))return false;S[k].unshift({id:uid(),person:v.person,amt:+v.amt,date:v.date||'',note:v.note,shots:sh,pay:[],emi:+v.emi>0?{amt:+v.emi,n:+v.emin||0,start:v.estart||v.date||today()}:null})})}
+function addDebt(k){modal(k=='given'?'Lend money':'Borrow money',[{k:'person',l:k=='given'?'Lent to':'Borrowed from'},{k:'amt',l:'Amount',t:'number'},{k:'date',l:'Date (optional)',t:'date'},{k:'phone',l:'Phone number for WhatsApp reminders (optional)',t:'tel'},{k:'due',l:'Due date (optional)',t:'date'},{k:'note',l:'Note (optional)'},{k:'emi',l:'EMI amount (optional)',t:'number'},{k:'emin',l:'Number of EMIs (blank = total ÷ EMI)',t:'number'},{k:'estart',l:'First EMI date (optional)',t:'date'}],(v,sh)=>{if(!v.person||!(+v.amt>0))return false;S[k].unshift({id:uid(),person:v.person,amt:+v.amt,date:v.date||'',phone:v.phone,due:v.due||'',note:v.note,shots:sh,pay:[],emi:+v.emi>0?{amt:+v.emi,n:+v.emin||0,start:v.estart||v.date||today()}:null})})}
 function addPay(k,id){const d=S[k].find(x=>x.id==id);modal('Add repayment',[{k:'amt',l:'Amount',t:'number',v:Math.max(d.amt-paid(d),0)||''},{k:'date',l:'Date',t:'date',v:today()},{k:'note',l:'Note (optional)'}],(v,sh)=>{if(!(+v.amt>0))return false;d.pay.push({id:uid(),amt:+v.amt,date:v.date||today(),note:v.note,shots:sh})})}
 function delPay(k,id,pid){const d=S[k].find(x=>x.id==id);d.pay=d.pay.filter(r=>r.id!=pid);save();render()}
 function addSlip(){modal('Add payslip',[{k:'month',l:'Pay month',t:'month',v:today().slice(0,7)},{k:'net',l:'Net / take-home pay',t:'number'},{k:'gross',l:'Gross pay (optional)',t:'number'},{k:'note',l:'Note (optional)'}],(v,sh)=>{if(!v.month||!(+v.net>0))return false;S.pay=S.pay.filter(x=>x.month!=v.month);S.pay.push({id:uid(),month:v.month,net:+v.net,gross:+v.gross||0,note:v.note,shots:sh})})}
@@ -408,7 +425,7 @@ function importBank(c){impCard=!!c;pickFile((rows,fn)=>{
  rec(impCard?'card':'bank',fn,n);save();render();toast(n+' transactions imported'+(dup?`, ${dup} duplicates skipped`:''))})}
 
 render();
-load().then(s=>{if(s)S=Object.assign(S,s);const gone=new Set(S.txn.filter(t=>t.cash).map(t=>t.id));S.txn=S.txn.filter(t=>!t.cash);(S.rides||[]).forEach(r=>{if(gone.has(r.tx))r.tx=''});matchRides();S.txn.forEach(x=>{if(x.amt>0&&/sanchu/i.test(x.desc)&&!((S.alias||{})[parseDesc(x.desc).key]||{}).c)x.cat='Pet expenses';if(x.amt>0&&(x.cat=='Cash & Transfers'||x.cat=='Other')&&/indian\s*clearing|\biccl\b|yesb0*709|nach0*22163\b/i.test(x.desc))x.cat='Investments';fixRent(x);if(x.amt>0&&(x.cat=='Cash & Transfers'||x.cat=='Other')&&/\beternal\b/i.test(x.desc)&&!((S.alias||{})[parseDesc(x.desc).key]||{}).c)x.cat='Food & Dining'});save();render()});
+load().then(s=>{if(s)S=Object.assign(S,s);const gone=new Set(S.txn.filter(t=>t.cash).map(t=>t.id));S.txn=S.txn.filter(t=>!t.cash);(S.rides||[]).forEach(r=>{if(gone.has(r.tx))r.tx=''});syncReminders();matchRides();S.txn.forEach(x=>{if(x.amt>0&&/sanchu/i.test(x.desc)&&!((S.alias||{})[parseDesc(x.desc).key]||{}).c)x.cat='Pet expenses';if(x.amt>0&&(x.cat=='Cash & Transfers'||x.cat=='Other')&&/indian\s*clearing|\biccl\b|yesb0*709|nach0*22163\b/i.test(x.desc))x.cat='Investments';fixRent(x);if(x.amt>0&&(x.cat=='Cash & Transfers'||x.cat=='Other')&&/\beternal\b/i.test(x.desc)&&!((S.alias||{})[parseDesc(x.desc).key]||{}).c)x.cat='Food & Dining'});save();render()});
 </script>
 </body>
 </html>

@@ -1,6 +1,11 @@
 package com.sagar.hisaab
 
+import android.Manifest
 import android.annotation.SuppressLint
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.core.content.ContextCompat
 import android.net.Uri
 import android.os.Bundle
 import android.webkit.ValueCallback
@@ -40,6 +45,12 @@ class MainActivity : AppCompatActivity() {
             .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
             .build()
 
+        web.addJavascriptInterface(Bridge(applicationContext), "HisaabAndroid")
+        if (Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+            != PackageManager.PERMISSION_GRANTED
+        ) requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
+
         web.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
@@ -51,6 +62,13 @@ class MainActivity : AppCompatActivity() {
                 view: WebView,
                 request: WebResourceRequest
             ): WebResourceResponse? = loader.shouldInterceptRequest(request.url)
+
+            // Links to other sites (e.g. WhatsApp) open outside the app.
+            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                if (request.url.host == "appassets.androidplatform.net") return false
+                try { startActivity(Intent(Intent.ACTION_VIEW, request.url)) } catch (e: Exception) {}
+                return true
+            }
         }
 
         // Lets the page's file pickers work (statements, invoices, screenshots).
