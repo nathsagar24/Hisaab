@@ -492,6 +492,7 @@ function sharedTab(){
   if(dec.length)h+=`<div class="card"><b>Declined</b>${dec.map(r=>`<div class="pay"><div>${esc(oName(r))} · ${money(r.amt)}</div><button class="x" onclick="cancelShared('${r.id}')" aria-label="Remove">✕</button></div>`).join('')}</div>`;
   return h}
 function sharedDetail(){const r=CS.find(x=>x.id==view.id);if(!r){view=null;return debtTab()}
+  if(r.status=='accepted'&&(r.pay||[]).length)loadProofs(r.id);const pf=SP[r.id]||{};
   const p=sPaid(r),left=r.amt-p,me=lc(CU.email),L=imLender(r),ov=r.due&&r.due<today()&&left>0;
   return `<div class="top"><button class="g" onclick="view=null;render()">← Back</button></div>
   <div class="card"><div class="mut">${L?'Lent to':'Borrowed from'} · ${fdate(r.date)}</div><h2 style="margin:4px 0">${esc(oName(r))}</h2><div class="mut">${esc(otherOf(r).e)}</div>${r.note?`<div class="mut">${esc(r.note)}</div>`:''}
@@ -499,7 +500,7 @@ function sharedDetail(){const r=CS.find(x=>x.id==view.id);if(!r){view=null;retur
   <div class="sum" style="margin-top:10px"><div><b>${money(r.amt)}</b><span>Total</span></div><div><b>${money(p)}</b><span>Repaid</span></div><div><b class="${left<=0?'pos':'neg'}">${money(Math.max(left,0))}</b><span>Left</span></div></div>
   ${r.due&&left>0?`<div style="margin-top:10px;${ov?'color:var(--red)':''}"><b>Due ${fdate(r.due)}</b>${ov?' (overdue)':''}</div>`:''}
   ${r.status=='accepted'?`<div class="row"><button class="b" onclick="addSharedPay('${r.id}')">+ Repayment</button></div>`:`<div class="mut" style="margin-top:10px">Status: ${esc(r.status)}</div>`}</div>
-  <div class="card"><b>Repayments</b>${(r.pay||[]).length?r.pay.map(x=>`<div class="pay"><div><b>${money(x.amt)}</b> <span class="mut">${fdate(x.date)}${x.note?' · '+esc(x.note):''} · by ${x.by==me?'you':esc(oName(r))}</span></div></div>`).join(''):'<div class="mut" style="margin-top:6px">None recorded yet.</div>'}</div>`}
+  <div class="card"><b>Repayments</b>${(r.pay||[]).length?r.pay.map(x=>`<div class="pay"><div><b>${money(x.amt)}</b> <span class="mut">${fdate(x.date)}${x.note?' · '+esc(x.note):''} · by ${x.by==me?'you':esc(oName(r))}</span>${thumbs(pf[x.id])}</div></div>`).join(''):'<div class="mut" style="margin-top:6px">None recorded yet.</div>'}</div>`}
 
 function cSign(create){const em=lc($('#cu_email').value),pw=$('#cu_pass').value,nm=$('#cu_name').value.trim(),a=firebase.auth();cloudMsg='';
   if(!em||!pw){cloudMsg='Enter your email and password.';return render()}
@@ -519,9 +520,13 @@ function respond(id,ok){const r=CS.find(x=>x.id==id);if(!r)return;const me=lc(CU
   firebase.firestore().collection('shared').doc(id).update(u).then(()=>note(r.createdBy,myName()+(ok?' accepted':' declined')+' your debt request of '+money(r.amt),id)).catch(cerr)}
 function cancelShared(id){firebase.firestore().collection('shared').doc(id).delete().catch(cerr)}
 function addSharedPay(id){const r=CS.find(x=>x.id==id);if(!r)return;
-  modal('Add repayment',[{k:'amt',l:'Amount',t:'number',v:Math.max(r.amt-sPaid(r),0)||''},{k:'date',l:'Date',t:'date',v:today()},{k:'note',l:'Note (optional)'}],v=>{
-    if(!(+v.amt>0))return false;const x={id:uid(),amt:+v.amt,date:v.date||today(),note:v.note||'',by:lc(CU.email)};
-    firebase.firestore().collection('shared').doc(id).update({pay:firebase.firestore.FieldValue.arrayUnion(x)}).then(()=>note(otherOf(r).e,myName()+' recorded a repayment of '+money(x.amt),id)).catch(cerr)})}
+  modal('Add repayment – screenshot required',[{k:'amt',l:'Amount',t:'number',v:Math.max(r.amt-sPaid(r),0)||''},{k:'date',l:'Date',t:'date',v:today()},{k:'note',l:'Note (optional)'}],(v,sh)=>{
+    if(!(+v.amt>0)||!sh.length)return false;
+    const shots=sh.slice(0,3);if(shots.join('').length>700000){alert('Screenshots are too large. Add fewer or smaller images.');return false}
+    const x={id:uid(),amt:+v.amt,date:v.date||today(),note:v.note||'',by:lc(CU.email),hasProof:true},db=firebase.firestore(),ref=db.collection('shared').doc(id);
+    ref.collection('proofs').doc(x.id).set({shots,by:x.by,ts:Date.now()}).then(()=>ref.update({pay:firebase.firestore.FieldValue.arrayUnion(x)})).then(()=>{SP[id]=null;return note(otherOf(r).e,myName()+' recorded a repayment of '+money(x.amt)+' with a screenshot',id)}).catch(cerr)})}
+const SP={};
+function loadProofs(id){if(SP[id]!==undefined)return;SP[id]={};firebase.firestore().collection('shared').doc(id).collection('proofs').get().then(q=>{const m={};q.docs.forEach(d=>m[d.id]=d.data().shots||[]);SP[id]=m;if(view&&view.id==id)render()}).catch(()=>{SP[id]=undefined})}
 </script>
 
 </body>

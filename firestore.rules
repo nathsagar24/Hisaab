@@ -19,7 +19,11 @@ service cloud.firestore {
       allow update: if verified() && me() in resource.data.emails && (
         // repayments only on accepted records
         (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['pay'])
-          && resource.data.status == 'accepted')
+          && resource.data.status == 'accepted'
+          // exactly one new repayment, and its screenshot proof must already exist
+          && request.resource.data.pay.size() == resource.data.pay.size() + 1
+          && request.resource.data.pay[request.resource.data.pay.size() - 1].hasProof == true
+          && exists(/databases/$(database)/documents/shared/$(id)/proofs/$(request.resource.data.pay[request.resource.data.pay.size() - 1].id)))
         // accept/decline only by the person who did not create it
         || (request.resource.data.diff(resource.data).affectedKeys()
               .hasOnly(['status', 'lenderName', 'borrowerName'])
@@ -28,6 +32,15 @@ service cloud.firestore {
       // Creator may withdraw a request that isn't accepted yet.
       allow delete: if verified() && resource.data.createdBy == me()
         && resource.data.status != 'accepted';
+    }
+
+    // Screenshot proofs for repayments (write once, never edited).
+    match /shared/{id}/proofs/{pid} {
+      allow read: if verified() && me() in get(/databases/$(database)/documents/shared/$(id)).data.emails;
+      allow create: if verified()
+        && me() in get(/databases/$(database)/documents/shared/$(id)).data.emails
+        && get(/databases/$(database)/documents/shared/$(id)).data.status == 'accepted'
+        && request.resource.data.shots.size() >= 1 && request.resource.data.shots.size() <= 3;
     }
 
     // In-app notifications, readable only by the recipient.
