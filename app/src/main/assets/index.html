@@ -55,7 +55,7 @@ input{width:100%;margin-top:4px;padding:10px;font:inherit;color:var(--tx);backgr
 <div id="m"></div><div id="z" onclick="this.className=''"><img id="zi" alt=""></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-let dsub='given';
+let dsub='given',CU=null,CS=[],CN=[];
 let S={cur:'₹',given:[],received:[],pay:[],inv:[],txn:[],up:{}},spM='',upM='',tab='month',view=null,tmp=[],okf=null,fk=[];
 const $=s=>document.querySelector(s);
 const uid=()=>Math.random().toString(36).slice(2,9);
@@ -72,7 +72,7 @@ async function load(){try{const d=await idb();return await new Promise(res=>{con
 async function save(){try{const d=await idb();d.transaction('k','readwrite').objectStore('k').put(JSON.parse(JSON.stringify(S)),'s');syncReminders()}catch(e){console.error(e)}}
 
 function go(t){tab=t;view=null;render()}
-function fabClick(){if(tab=='income')addSlip();else if(tab=='invest')addInv();else if(tab=='spend')addTxn();else addDebt(dsub)}
+function fabClick(){if(tab=='income')addSlip();else if(tab=='invest')addInv();else if(tab=='spend')addTxn();else if(dsub=='shared')shareDebt();else addDebt(dsub)}
 function thumbs(a){return a&&a.length?`<div class="thumbs">${a.map(s=>`<img src="${s}" alt="Screenshot" onclick="event.stopPropagation();zoom(this.src)">`).join('')}</div>`:''}
 function zoom(s){$('#zi').src=s;$('#z').className='on'}
 function twice(b,fn){if(b.dataset.s){fn()}else{b.dataset.s=1;b.dataset.t=b.textContent;b.textContent='Tap again to confirm';setTimeout(()=>{delete b.dataset.s;b.textContent=b.dataset.t},3000)}}
@@ -81,7 +81,8 @@ function render(){
   $('#cur').value=S.cur;
   document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.t==tab));
   $('#fab').style.display=view||tab=='month'?'none':'block';
-  $('#fab').textContent=({debt:dsub=='given'?'+ Lend':'+ Borrow',income:'+ Payslip',invest:'+ Investment',spend:'+ Spending'})[tab];
+  $('#fab').textContent=({debt:dsub=='shared'?'+ Share a debt':dsub=='given'?'+ Lend':'+ Borrow',income:'+ Payslip',invest:'+ Investment',spend:'+ Spending'})[tab];
+  if(tab=='debt'&&dsub=='shared'&&!view&&!(CU&&CU.emailVerified))$('#fab').style.display='none';
   $('#app').innerHTML=view?detail():tab=='month'?month():tab=='income'?income():tab=='invest'?invest():tab=='spend'?spend():debtTab();
 }
 
@@ -103,14 +104,16 @@ function remind(id){const d=S.given.find(x=>x.id==id);if(!d)return;const n=waNum
 function attnCard(){const lim=addDays(today(),3),o=[];['given','received'].forEach(k=>S[k].forEach(d=>{const du=dueOf(d);if(du&&du.date<=lim)o.push({k,d,du})}));if(!o.length)return '';o.sort((a,b)=>a.du.date.localeCompare(b.du.date));
   return `<div class="card"><b>Needs attention</b>${o.map(({k,d,du})=>{const ov=du.date<today();return `<div class="pay"><div onclick="dsub='${k}';view={k:'${k}',id:'${d.id}'};render()" style="cursor:pointer;min-width:0"><div><b>${esc(d.person)}</b> <span class="mut">${k=='given'?'owes you':'you owe'}</span></div><div class="mut" style="${ov?'color:var(--red)':''}">${du.emi?'EMI':'Due'} ${fdate(du.date)} \u00b7 ${money(du.amt)}${ov?' \u00b7 overdue':''}</div></div>${k=='given'?`<button class="g" onclick="remind('${d.id}')" aria-label="Remind on WhatsApp">\ud83d\udcac</button>`:''}</div>`}).join('')}</div>`}
 function syncReminders(){try{if(!window.HisaabAndroid||!HisaabAndroid.setReminders)return;const out=[],now=Date.now();
-  ['given','received'].forEach(k=>S[k].forEach(d=>{const du=dueOf(d);if(!du)return;const when=new Date(du.date+'T09:00:00').getTime(),ttl=(k=='given'?d.person+' owes you ':'You owe '+d.person+' ')+money(du.amt);
-   [[when-864e5,'Due tomorrow'],[when,'Due today']].forEach(([t,lbl],i)=>{if(t>now)out.push({id:d.id+i,t,title:ttl,text:lbl+(du.emi?' \u00b7 EMI':'')})})}));
+  const add=(id,date,ttl,emi)=>{const when=new Date(date+'T09:00:00').getTime();[[when-864e5,'Due tomorrow'],[when,'Due today']].forEach(([t,lbl],i)=>{if(t>now)out.push({id:id+i,t,title:ttl,text:lbl+(emi?' \u00b7 EMI':'')})})};
+  ['given','received'].forEach(k=>S[k].forEach(d=>{const du=dueOf(d);if(du)add(d.id,du.date,(k=='given'?d.person+' owes you ':'You owe '+d.person+' ')+money(du.amt),du.emi)}));
+  (typeof sharedDue=='function'?sharedDue():[]).forEach(r=>add('sh'+r.id,r.date,r.ttl,false));
   HisaabAndroid.setReminders(JSON.stringify(out))}catch(e){}}
 function debtTab(){
   const left=d=>Math.max(0,d.amt-paid(d)),tg=S.given.reduce((a,d)=>a+left(d),0),tr=S.received.reduce((a,d)=>a+left(d),0),net=tg-tr;
   let h=`<div class="card sum"><div><b class="pos">${money(tg)}</b><span>Owed to me</span></div><div><b class="neg">${money(tr)}</b><span>I owe</span></div><div><b class="${net>=0?'pos':'neg'}">${money(Math.abs(net))}</b><span>${net>=0?'Net owed to me':'Net I owe'}</span></div></div>`;
   h+=attnCard();
-  h+=`<div class="row" style="margin:0 0 12px"><button class="${dsub=='given'?'b':'g'}" onclick="dsub='given';render()">Given</button><button class="${dsub=='received'?'b':'g'}" onclick="dsub='received';render()">Received</button></div>`;
+  h+=`<div class="row" style="margin:0 0 12px"><button class="${dsub=='given'?'b':'g'}" onclick="dsub='given';render()">Given</button><button class="${dsub=='received'?'b':'g'}" onclick="dsub='received';render()">Received</button><button class="${dsub=='shared'?'b':'g'}" onclick="dsub='shared';render()">Shared${typeof unreadN=='function'&&unreadN()?' ('+unreadN()+')':''}</button></div>`;
+  if(dsub=='shared')return h+sharedTab();
   return h+list(dsub)}
 function list(k){
   const L=S[k],tot=L.reduce((a,d)=>a+d.amt,0),pd=L.reduce((a,d)=>a+paid(d),0);
@@ -121,6 +124,7 @@ function list(k){
 }
 
 function detail(){
+  if(view.k=='shared')return sharedDetail();
   const k=view.k,d=S[k].find(x=>x.id==view.id);if(!d){view=null;return debtTab()}
   const p=paid(d),left=d.amt-p,ei=emiInfo(d);
   return `<div class="top"><button class="g" onclick="view=null;render()">← Back</button></div>
@@ -427,5 +431,98 @@ function importBank(c){impCard=!!c;pickFile((rows,fn)=>{
 render();
 load().then(s=>{if(s)S=Object.assign(S,s);const gone=new Set(S.txn.filter(t=>t.cash).map(t=>t.id));S.txn=S.txn.filter(t=>!t.cash);(S.rides||[]).forEach(r=>{if(gone.has(r.tx))r.tx=''});syncReminders();matchRides();S.txn.forEach(x=>{if(x.amt>0&&/sanchu/i.test(x.desc)&&!((S.alias||{})[parseDesc(x.desc).key]||{}).c)x.cat='Pet expenses';if(x.amt>0&&(x.cat=='Cash & Transfers'||x.cat=='Other')&&/indian\s*clearing|\biccl\b|yesb0*709|nach0*22163\b/i.test(x.desc))x.cat='Investments';fixRent(x);if(x.amt>0&&(x.cat=='Cash & Transfers'||x.cat=='Other')&&/\beternal\b/i.test(x.desc)&&!((S.alias||{})[parseDesc(x.desc).key]||{}).c)x.cat='Food & Dining'});save();render()});
 </script>
+
+<script>
+/* ---- Stage 2: accounts + shared debts (Firebase). Android app only. ---- */
+const FB_CONFIG=null; /* paste your Firebase web config object here, see FIREBASE-SETUP.md */
+let cloudReady=false,cloudMsg='',fbUnsubs=[];
+const lc=e=>String(e||'').trim().toLowerCase();
+const IS_APP=!!window.HisaabAndroid;
+function loadScript(src){return new Promise((res,rej)=>{const e=document.createElement('script');e.src=src;e.onload=res;e.onerror=()=>rej(new Error('Could not load '+src));document.head.appendChild(e)})}
+async function cloudInit(){
+  if(!FB_CONFIG||cloudReady)return cloudReady;
+  try{const b='https://www.gstatic.com/firebasejs/10.12.2/firebase-';
+    await loadScript(b+'app-compat.js');await Promise.all([loadScript(b+'auth-compat.js'),loadScript(b+'firestore-compat.js')]);
+    firebase.initializeApp(FB_CONFIG);
+    firebase.firestore().settings({experimentalAutoDetectLongPolling:true,merge:true});
+    firebase.auth().onAuthStateChanged(u=>{CU=u;watch();render()});
+    cloudReady=true}catch(e){cloudMsg='Could not reach the sync service. Check your internet connection.'}
+  return cloudReady}
+function watch(){fbUnsubs.forEach(f=>f());fbUnsubs=[];CS=[];CN=[];
+  if(!CU||!CU.emailVerified)return;
+  const db=firebase.firestore(),me=lc(CU.email);
+  fbUnsubs.push(db.collection('shared').where('emails','array-contains',me).onSnapshot(q=>{CS=q.docs.map(d=>({...d.data(),id:d.id}));syncReminders();overdueNotes();if(tab=='debt')render()},e=>{cloudMsg=e.message;render()}));
+  fbUnsubs.push(db.collection('notes').where('to','==',me).onSnapshot(q=>{CN=q.docs.map(d=>({...d.data(),id:d.id})).sort((a,b)=>b.ts-a.ts);if(tab=='debt')render()},()=>{}))}
+const unreadN=()=>CN.filter(n=>!n.read).length;
+const myName=()=>CU.displayName||CU.email.split('@')[0];
+const sPaid=r=>(r.pay||[]).reduce((a,p)=>a+p.amt,0);
+const imLender=r=>lc(CU.email)==r.lender;
+const otherOf=r=>imLender(r)?{e:r.borrower,n:r.borrowerName}:{e:r.lender,n:r.lenderName};
+const oName=r=>{const o=otherOf(r);return o.n||o.e};
+function note(to,text,ref){return firebase.firestore().collection('notes').add({to,text,ts:Date.now(),read:false,ref:ref||''})}
+function cerr(e){cloudMsg=(e&&e.message||'Something went wrong').replace('Firebase: ','');render()}
+function sharedDue(){if(!CU||!CU.emailVerified)return [];return CS.filter(r=>r.status=='accepted'&&r.due&&r.amt-sPaid(r)>0).map(r=>({id:r.id,date:r.due,ttl:(imLender(r)?oName(r)+' owes you ':'You owe '+oName(r)+' ')+money(r.amt-sPaid(r))}))}
+/* lender's app tells the borrower (in-app) once when a due date is missed */
+function overdueNotes(){try{CS.forEach(r=>{if(r.status!='accepted'||!imLender(r)||!r.due||r.due>=today()||r.amt-sPaid(r)<=0)return;
+  const k='od_'+r.id+'_'+r.due;if(localStorage.getItem(k))return;localStorage.setItem(k,1);
+  note(r.borrower,(r.lenderName||r.lender)+': payment of '+money(r.amt-sPaid(r))+' was due on '+fdate(r.due),r.id)})}catch(e){}}
+
+function sharedTab(){
+  if(!IS_APP)return `<div class="card"><b>Shared debts</b><div class="mut" style="margin-top:6px">Accounts and shared debts work in the Hisaab Android app.</div></div>`;
+  if(!FB_CONFIG)return `<div class="card"><b>Shared debts</b><div class="mut" style="margin-top:6px">The sync service isn't configured yet. See FIREBASE-SETUP.md in the repository.</div></div>`;
+  if(!cloudReady){cloudInit().then(()=>render());return `<div class="empty">${esc(cloudMsg)||'Connecting…'}</div>`}
+  const err=cloudMsg?`<div class="card" style="color:var(--red)">${esc(cloudMsg)}</div>`:'';
+  if(!CU)return err+`<div class="card"><b>Sign in to share debts</b><div class="mut" style="margin:4px 0 6px">Share a debt with someone who also uses Hisaab. They get a request and the record is created once they accept.</div>
+   <input id="cu_name" placeholder="Your name (for a new account)"><input id="cu_email" type="email" placeholder="Email" autocapitalize="none"><input id="cu_pass" type="password" placeholder="Password (6+ characters)">
+   <div class="row"><button class="b" onclick="cSign(0)">Sign in</button><button class="g" onclick="cSign(1)">Create account</button></div>
+   <div class="row"><button class="g" onclick="cReset()">Forgot password</button></div></div>`;
+  if(!CU.emailVerified)return err+`<div class="card"><b>Verify your email</b><div class="mut" style="margin:6px 0">We sent a link to ${esc(CU.email)}. Open it, then tap the button below. This keeps people from claiming someone else's email.</div>
+   <div class="row"><button class="b" onclick="CU.reload().then(()=>{cloudMsg='';watch();render()}).catch(cerr)">I've verified</button><button class="g" onclick="CU.sendEmailVerification().then(()=>{cloudMsg='Verification email sent again.';render()}).catch(cerr)">Resend</button></div>
+   <div class="row"><button class="g" onclick="firebase.auth().signOut()">Sign out</button></div></div>`;
+  const me=lc(CU.email),inc=CS.filter(r=>r.status=='pending'&&r.createdBy!=me),out=CS.filter(r=>r.status=='pending'&&r.createdBy==me),acc=CS.filter(r=>r.status=='accepted'),dec=CS.filter(r=>r.status=='declined');
+  let h=err+`<div class="card"><div class="r" style="display:flex;justify-content:space-between;align-items:center;gap:8px"><span class="mut">Signed in as ${esc(CU.email)}</span><button class="g" onclick="firebase.auth().signOut()">Sign out</button></div></div>`;
+  const un=CN.filter(n=>!n.read);
+  if(CN.length)h+=`<div class="card"><div style="display:flex;justify-content:space-between"><b>Notifications${un.length?' ('+un.length+')':''}</b>${un.length?`<button class="g" onclick="readNotes()">Mark read</button>`:''}</div>${CN.slice(0,8).map(n=>`<div class="pay"><div style="${n.read?'':'font-weight:600'}">${esc(n.text)}<div class="mut">${new Date(n.ts).toLocaleDateString()}</div></div></div>`).join('')}</div>`;
+  if(inc.length)h+=`<div class="card"><b>Requests for you</b>${inc.map(r=>`<div class="pay"><div><b>${esc(oName(r))}</b> says ${imLender(r)?'they owe you':'you owe them'} <b>${money(r.amt)}</b>${r.due?'<div class="mut">Due '+fdate(r.due)+'</div>':''}${r.note?'<div class="mut">'+esc(r.note)+'</div>':''}</div><div style="display:flex;gap:6px"><button class="b" onclick="respond('${r.id}',1)">Accept</button><button class="g" onclick="respond('${r.id}',0)">Decline</button></div></div>`).join('')}</div>`;
+  if(out.length)h+=`<div class="card"><b>Waiting for them</b>${out.map(r=>`<div class="pay"><div>${esc(oName(r))} · ${money(r.amt)}<div class="mut">${imLender(r)?'You lent':'You borrowed'} · pending</div></div><button class="x" onclick="twice(this,()=>cancelShared('${r.id}'))" aria-label="Cancel request">✕</button></div>`).join('')}</div>`;
+  const tl=acc.filter(r=>imLender(r)).reduce((a,r)=>a+r.amt-sPaid(r),0),tb=acc.filter(r=>!imLender(r)).reduce((a,r)=>a+r.amt-sPaid(r),0);
+  h+=`<div class="card sum"><div><b class="pos">${money(tl)}</b><span>Owed to me</span></div><div><b class="neg">${money(tb)}</b><span>I owe</span></div></div>`;
+  if(!acc.length&&!inc.length&&!out.length)h+=`<div class="empty">No shared debts yet.<br>Tap the button below to share one.</div>`;
+  h+=acc.sort((a,b)=>b.ts-a.ts).map(r=>{const p=sPaid(r),left=r.amt-p,ov=r.due&&r.due<today()&&left>0;return `<div class="card item" onclick="view={k:'shared',id:'${r.id}'};render()"><div class="r"><b>${esc(oName(r))}</b><b class="${left<=0?'pos':''}">${left<=0?'Settled':money(left)+' left'}</b></div><div class="bar"><i style="width:${Math.min(100,p/r.amt*100)}%"></i></div><div class="r mut"><span>${imLender(r)?'They owe you':'You owe them'}</span><span>${money(p)} of ${money(r.amt)}</span></div>${r.due&&left>0?`<div class="mut" style="margin-top:4px;${ov?'color:var(--red)':''}">Due ${fdate(r.due)}${ov?' (overdue)':''}</div>`:''}</div>`}).join('');
+  if(dec.length)h+=`<div class="card"><b>Declined</b>${dec.map(r=>`<div class="pay"><div>${esc(oName(r))} · ${money(r.amt)}</div><button class="x" onclick="cancelShared('${r.id}')" aria-label="Remove">✕</button></div>`).join('')}</div>`;
+  return h}
+function sharedDetail(){const r=CS.find(x=>x.id==view.id);if(!r){view=null;return debtTab()}
+  const p=sPaid(r),left=r.amt-p,me=lc(CU.email),L=imLender(r),ov=r.due&&r.due<today()&&left>0;
+  return `<div class="top"><button class="g" onclick="view=null;render()">← Back</button></div>
+  <div class="card"><div class="mut">${L?'Lent to':'Borrowed from'} · ${fdate(r.date)}</div><h2 style="margin:4px 0">${esc(oName(r))}</h2><div class="mut">${esc(otherOf(r).e)}</div>${r.note?`<div class="mut">${esc(r.note)}</div>`:''}
+  <div class="bar"><i style="width:${Math.min(100,p/r.amt*100)}%"></i></div>
+  <div class="sum" style="margin-top:10px"><div><b>${money(r.amt)}</b><span>Total</span></div><div><b>${money(p)}</b><span>Repaid</span></div><div><b class="${left<=0?'pos':'neg'}">${money(Math.max(left,0))}</b><span>Left</span></div></div>
+  ${r.due&&left>0?`<div style="margin-top:10px;${ov?'color:var(--red)':''}"><b>Due ${fdate(r.due)}</b>${ov?' (overdue)':''}</div>`:''}
+  ${r.status=='accepted'?`<div class="row"><button class="b" onclick="addSharedPay('${r.id}')">+ Repayment</button></div>`:`<div class="mut" style="margin-top:10px">Status: ${esc(r.status)}</div>`}</div>
+  <div class="card"><b>Repayments</b>${(r.pay||[]).length?r.pay.map(x=>`<div class="pay"><div><b>${money(x.amt)}</b> <span class="mut">${fdate(x.date)}${x.note?' · '+esc(x.note):''} · by ${x.by==me?'you':esc(oName(r))}</span></div></div>`).join(''):'<div class="mut" style="margin-top:6px">None recorded yet.</div>'}</div>`}
+
+function cSign(create){const em=lc($('#cu_email').value),pw=$('#cu_pass').value,nm=$('#cu_name').value.trim(),a=firebase.auth();cloudMsg='';
+  if(!em||!pw){cloudMsg='Enter your email and password.';return render()}
+  if(create){if(!nm){cloudMsg='Enter your name so people know who is asking.';return render()}
+    a.createUserWithEmailAndPassword(em,pw).then(c=>c.user.updateProfile({displayName:nm}).then(()=>c.user.sendEmailVerification()).then(()=>{CU=a.currentUser;watch();render()})).catch(cerr)}
+  else a.signInWithEmailAndPassword(em,pw).catch(cerr)}
+function cReset(){const em=lc($('#cu_email').value);if(!em){cloudMsg='Enter your email above first.';return render()}
+  firebase.auth().sendPasswordResetEmail(em).then(()=>{cloudMsg='Password reset email sent.';render()}).catch(cerr)}
+function readNotes(){const db=firebase.firestore(),b=db.batch();CN.filter(n=>!n.read).forEach(n=>b.update(db.collection('notes').doc(n.id),{read:true}));b.commit().catch(cerr)}
+function shareDebt(){if(!CU||!CU.emailVerified)return;
+  modal('Share a debt',[{k:'email',l:"Other person's email",t:'email'},{k:'role',l:'You are the',o:['Lender (I gave money)','Borrower (I received money)']},{k:'amt',l:'Amount',t:'number'},{k:'date',l:'Date (optional)',t:'date'},{k:'due',l:'Due date (optional)',t:'date'},{k:'note',l:'Note (optional)'}],v=>{
+    const o=lc(v.email),me=lc(CU.email);if(!/^\S+@\S+\.\S+$/.test(o)||o==me||!(+v.amt>0))return false;
+    const lender=v.role[0]=='L',rec={emails:[me,o],lender:lender?me:o,borrower:lender?o:me,amt:+v.amt,date:v.date||'',due:v.due||'',note:v.note||'',status:'pending',createdBy:me,pay:[],ts:Date.now()};
+    rec[lender?'lenderName':'borrowerName']=myName();
+    firebase.firestore().collection('shared').add(rec).then(r=>note(o,myName()+' sent you a debt request of '+money(rec.amt),r.id)).catch(cerr)})}
+function respond(id,ok){const r=CS.find(x=>x.id==id);if(!r)return;const me=lc(CU.email),u={status:ok?'accepted':'declined'};u[r.lender==me?'lenderName':'borrowerName']=myName();
+  firebase.firestore().collection('shared').doc(id).update(u).then(()=>note(r.createdBy,myName()+(ok?' accepted':' declined')+' your debt request of '+money(r.amt),id)).catch(cerr)}
+function cancelShared(id){firebase.firestore().collection('shared').doc(id).delete().catch(cerr)}
+function addSharedPay(id){const r=CS.find(x=>x.id==id);if(!r)return;
+  modal('Add repayment',[{k:'amt',l:'Amount',t:'number',v:Math.max(r.amt-sPaid(r),0)||''},{k:'date',l:'Date',t:'date',v:today()},{k:'note',l:'Note (optional)'}],v=>{
+    if(!(+v.amt>0))return false;const x={id:uid(),amt:+v.amt,date:v.date||today(),note:v.note||'',by:lc(CU.email)};
+    firebase.firestore().collection('shared').doc(id).update({pay:firebase.firestore.FieldValue.arrayUnion(x)}).then(()=>note(otherOf(r).e,myName()+' recorded a repayment of '+money(x.amt),id)).catch(cerr)})}
+</script>
+
 </body>
 </html>
