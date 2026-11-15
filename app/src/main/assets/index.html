@@ -434,7 +434,7 @@ load().then(s=>{if(s)S=Object.assign(S,s);const gone=new Set(S.txn.filter(t=>t.c
 
 <script>
 /* ---- Stage 2: accounts + shared debts (Firebase). Android app only. ---- */
-const FB_CONFIG=null; /* paste your Firebase web config object here, see FIREBASE-SETUP.md */
+const FB_CONFIG={apiKey:"AIzaSyDWs6W7U59FAQpIMGJehHf50hqG8K4qMp4",authDomain:"hisaab-90019.firebaseapp.com",projectId:"hisaab-90019",storageBucket:"hisaab-90019.firebasestorage.app",messagingSenderId:"479500077693",appId:"1:479500077693:web:9b74f50dd48d3ff38f7f14"}; /* paste your Firebase web config object here, see FIREBASE-SETUP.md */
 let cloudReady=false,cloudMsg='',fbUnsubs=[];
 const lc=e=>String(e||'').trim().toLowerCase();
 const IS_APP=!!window.HisaabAndroid;
