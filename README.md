@@ -14,3 +14,8 @@ A native Android wrapper around the Hisaab page. The page itself lives in
 - Importing PDFs/Excel/ZIP loads small helper libraries from the internet, so those imports need a connection.
 - Data is stored inside the app. Uninstalling the app or clearing its storage erases it.
 - Data in the web version does not carry over automatically; it lives in a different place.
+
+## Get the APK without Android Studio
+Every push to `main` builds the app on GitHub. Open the **Releases** page of this repo on your phone,
+download `Hisaab.apk` from the "Hisaab (latest build)" release and install it
+(allow "install unknown apps" for your browser when asked).
